@@ -1653,8 +1653,22 @@ const PERKS = [
         showToast('Direct hit!');
       });
     }},
-  {id:'ricochet', name:'Ricochet', icon:'💥', desc:'Your next capture creates a dramatic impact burst and ignores the target shield.',
-    apply: async (g,color)=>{ g.ricochetFor = color; showToast('Ricochet loaded.'); }},
+  {id:'fortify', name:'Fortify', icon:'🏰', desc:'Raise a one-round shield around all of your pieces.',
+    apply: async (g,color)=>{
+      for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+        const p=g.board[r][c];
+        if(p && p.color===color) p.shield = Math.max(p.shield||0, 1);
+      }
+      showToast('Your whole army is fortified.');
+    }},
+  {id:'bulletproof', name:'Bulletproof', icon:'🔫', desc:'Your pieces resist the next capture attempt this round.',
+    apply: async (g,color)=>{
+      for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+        const p=g.board[r][c];
+        if(p && p.color===color) p.shield = Math.max(p.shield||0, 1);
+      }
+      showToast('Bulletproof activated.');
+    }},
   {id:'doublestep', name:"Diva's Stride", icon:'👢', desc:'All your pawns can advance two squares from anywhere for the rest of the game.',
     apply: async (g,color)=>{
       for(let r=0;r<8;r++) for(let c=0;c<8;c++){
@@ -1969,6 +1983,21 @@ async function onSquareClick(r,c){
 
 async function performMove(move){
   const g = currentGame;
+  if(g.mode.startsWith('online')){
+    const room = await storeGet('room:'+g.roomCode, true);
+    if(!room || room.version !== g.version || room.turn !== g.turn){
+      if(room){
+        g.whiteName = room.hostName || g.whiteName;
+        g.blackName = room.guestName || g.blackName;
+        g.board = room.board; g.turn = room.turn; g.perksWhite = room.perksWhite; g.perksBlack = room.perksBlack;
+        g.capturedOfWhite = room.capturedOfWhite; g.capturedOfBlack = room.capturedOfBlack;
+        g.log = room.log; g.lastMove = room.lastMove; g.version = room.version; g.ended = room.ended;
+        renderBoard(); renderTurnBanner(); renderCaptured(); renderPerkChips(g);
+      }
+      showToast('The board updated. Check whose turn it is.');
+      return;
+    }
+  }
   const piece = g.board[move.from[0]][move.from[1]];
   const {board:nb, captured} = applyMove(g.board, move);
   g.board = nb;
@@ -2248,6 +2277,8 @@ function startGameRoomPoll(){
     const room = await storeGet('room:'+g.roomCode, true);
     if(!room) return;
     if((room.version||0) > (g.version||0)){
+      g.whiteName = room.hostName || g.whiteName;
+      g.blackName = room.guestName || g.blackName;
       g.board = room.board; g.turn = room.turn; g.perksWhite = room.perksWhite; g.perksBlack = room.perksBlack;
       g.capturedOfWhite = room.capturedOfWhite; g.capturedOfBlack = room.capturedOfBlack;
       g.log = room.log; g.lastMove = room.lastMove; g.version = room.version; g.ended = room.ended;
@@ -2311,8 +2342,12 @@ async function enterGameScreen(){
       await opt.apply(currentGame,'b');
     }
   } else if(currentGame.mode.startsWith('online')){
-    await startPerkPick(currentGame, currentGame.myColor, true);
-    await pushGameStateToRoom();
+    if(currentGame.mode==='online-host'){
+      await startPerkPick(currentGame, 'w', true);
+      await pushGameStateToRoom();
+    } else {
+      showToast('Waiting for the host to finish setup...');
+    }
   }
   renderBoard(); renderPerkChips(currentGame);
 }
