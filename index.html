@@ -141,8 +141,10 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(212,175,55,.35);b
 .sq.checksq{outline:3px solid #ff3b3b inset;}
 .piece-img{width:68%;height:68%;object-fit:contain;filter:drop-shadow(0 3px 4px rgba(0,0,0,.5));transition:transform .12s ease;user-select:none;pointer-events:none;}
 .piece-img.rook-piece{width:64%;height:64%;}
+.piece-img.white-pawn-piece{transform:scale(1.18);}
 .piece-img.kirby-piece{width:78%;height:78%;transform:translateX(-7%);}
 .sq:hover .piece-img{transform:scale(1.06);}
+.sq:hover .piece-img.white-pawn-piece{transform:scale(1.24);}
 .sq:hover .piece-img.kirby-piece{transform:translateX(-7%) scale(1.06);}
 .piece-img.black-piece{filter:drop-shadow(0 3px 4px rgba(0,0,0,.5)) drop-shadow(0 0 0 #000);}
 .coord{position:absolute;font-size:9px;color:rgba(0,0,0,.35);font-family:var(--font-mono);}
@@ -967,6 +969,7 @@ function paintTopBarName(){
 async function enterHome(){
   ME.badges = ME.badges || [];
   ME.avatar = ME.avatar || null;
+  await storeSet('friendcode:'+ME.friendCode, {name: ME.name, id: ME.friendCode}, true);
   await refreshOwnerCode();
   paintTopBarName();
   $('#myFriendCode').textContent = ME.friendCode;
@@ -996,7 +999,7 @@ $('#addFriendBtn').addEventListener('click', async ()=>{
   if(!code) return;
   if(code === ME.friendCode){ showToast("You can't friend yourself. (We checked.)"); return; }
   const entry = await storeGet('friendcode:'+code, true);
-  if(!entry){ showToast("No one has that friend code."); return; }
+  if(!entry){ showToast("No one has that friend code. Ask them to refresh the site once."); return; }
   ME.friends = ME.friends || [];
   if(ME.friends.some(f=>f.id===code)){ showToast("Already friends."); return; }
   ME.friends.push({name: entry.name, id: code});
@@ -1803,7 +1806,7 @@ function renderBoard(){
         const img = document.createElement('img');
         img.src = pieceImage(p);
         img.title = pieceAlt(p) + (p.shield?' 🛡️':'') + (p.frozen?' ❄️':'');
-        img.className = 'piece-img' + (p.color==='b'?' black-piece':'') + (p.type==='R'?' rook-piece':'');
+        img.className = 'piece-img' + (p.color==='b'?' black-piece':'') + (p.type==='R'?' rook-piece':'') + (p.type==='P' && p.color==='w'?' white-pawn-piece':'');
         sq.appendChild(img);
         if(p.shield){
           const s = document.createElement('div');
@@ -2125,7 +2128,8 @@ $('#modeCreateRoom').addEventListener('click', async ()=>{
     started: false,
     chat: [],
   };
-  await storeSet('room:'+roomCode, initial, true);
+  const roomCreated = await storeSet('room:'+roomCode, initial, true);
+  if(!roomCreated){ showToast('Could not create the room. Check your connection and try again.'); return; }
 
   let roomWaitTimer = setInterval(async ()=>{
     const room = await storeGet('room:'+roomCode, true);
@@ -2158,7 +2162,8 @@ $('#modeJoinRoom').addEventListener('click', ()=>{
     if(room.guestName){ showToast('That room is already full.'); return; }
     room.guestName = ME.name;
     room.started = true;
-    await storeSet('room:'+code, room, true);
+    const joined = await storeSet('room:'+code, room, true);
+    if(!joined){ showToast('Could not join the room. Check your connection and try again.'); return; }
     currentGame = newGameObject('online-guest', {whiteName: room.hostName, blackName: room.guestName, myColor:'b', roomCode:code});
     currentGame.chat = room.chat || [];
     await enterGameScreen();
