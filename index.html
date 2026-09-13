@@ -625,13 +625,31 @@ document.addEventListener('click', (e)=>{
   if(el) sfx.click();
 }, {capture:true});
 
-// storeGet retries a couple of times before giving up. window.storage.get()
-// throws for a key that simply doesn't exist yet *and* for real transient
-// errors, and we can't tell those apart from the error alone -- so instead
-// of treating every failure as "empty" (which risks overwriting real shared
-// data with a blank array on a hiccup), we retry first and only fall back
-// to null once we've genuinely tried a few times.
+const LOCAL_STORAGE_PREFIX = 'chess-remastered-iii:';
+function localStorageKey(key, shared){
+  return LOCAL_STORAGE_PREFIX + (shared ? 'shared:' : 'private:') + key;
+}
+function browserStoreGet(key, shared){
+  try{
+    const value = localStorage.getItem(localStorageKey(key, shared));
+    return value === null ? null : JSON.parse(value);
+  }catch(e){ return null; }
+}
+function browserStoreSet(key, value, shared){
+  try{
+    localStorage.setItem(localStorageKey(key, shared), JSON.stringify(value));
+    return true;
+  }catch(e){ return false; }
+}
+function browserStoreDelete(key, shared){
+  try{ localStorage.removeItem(localStorageKey(key, shared)); return true; }
+  catch(e){ return false; }
+}
+
+// GitHub Pages is static and does not provide window.storage. Keep using that
+// service when present, but fall back to browser storage for local play.
 async function storeGet(key, shared=false, attempts=3){
+  if(!window.storage || typeof window.storage.get !== 'function') return browserStoreGet(key, shared);
   for(let i=0;i<attempts;i++){
     try{
       const r = await window.storage.get(key, shared);
@@ -641,9 +659,10 @@ async function storeGet(key, shared=false, attempts=3){
       await new Promise(res=>setTimeout(res, 120*(i+1)));
     }
   }
-  return null;
+  return browserStoreGet(key, shared);
 }
 async function storeSet(key, value, shared=false, attempts=2){
+  if(!window.storage || typeof window.storage.set !== 'function') return browserStoreSet(key, value, shared);
   for(let i=0;i<attempts;i++){
     try{ await window.storage.set(key, JSON.stringify(value), shared); return true; }
     catch(e){
@@ -652,13 +671,22 @@ async function storeSet(key, value, shared=false, attempts=2){
       await new Promise(res=>setTimeout(res, 150*(i+1)));
     }
   }
-  return false;
+  return browserStoreSet(key, value, shared);
 }
 async function storeDelete(key, shared=false){
+  if(!window.storage || typeof window.storage.delete !== 'function') return browserStoreDelete(key, shared);
   try{ await window.storage.delete(key, shared); return true; }
-  catch(e){ return false; }
+  catch(e){ return browserStoreDelete(key, shared); }
 }
 async function storeList(prefix, shared=false){
+  if(!window.storage || typeof window.storage.list !== 'function'){
+    try{
+      const keyPrefix = localStorageKey(prefix, shared);
+      return Object.keys(localStorage)
+        .filter(key=>key.startsWith(keyPrefix))
+        .map(key=>key.slice(LOCAL_STORAGE_PREFIX.length));
+    }catch(e){ return []; }
+  }
   try{ const r = await window.storage.list(prefix, shared); return r ? r.keys : []; }
   catch(e){ return []; }
 }
