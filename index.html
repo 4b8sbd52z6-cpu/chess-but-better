@@ -4,9 +4,6 @@
 <meta charset="UTF-8">
 <title>CHESS: THE PREQUEL THE SEQUEL REMASTERED III</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#0c1410">
-<link rel="icon" type="image/png" href="icon.png">
-<link rel="apple-touch-icon" href="icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Cinzel:wght@600;800&family=Special+Elite&family=Baloo+2:wght@500;700&family=Bangers&family=IBM+Plex+Mono:wght@500;700&family=Caveat:wght@600;700&family=Press+Start+2P&family=Comfortaa:wght@500;700&family=Sora:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -134,11 +131,9 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(212,175,55,.35);b
 /* ---------- GAME SCREEN ---------- */
 .game-layout{display:grid;grid-template-columns:auto 320px;gap:22px;align-items:start;}
 @media(max-width:920px){.game-layout{grid-template-columns:1fr;}}
-#boardWrap{position:relative;width:min(92vw,560px);height:min(92vw,560px);border:6px solid #2b1c10;border-radius:8px;box-shadow:0 20px 50px rgba(0,0,0,.5);background-size:cover;background-position:center;}
+#boardWrap{position:relative;width:min(92vw,560px);aspect-ratio:544 / 547;border:6px solid #2b1c10;border-radius:8px;box-shadow:0 20px 50px rgba(0,0,0,.5);background-size:100% 100%;background-position:center;}
 #boardGrid{position:absolute;inset:0;display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);}
-.sq{position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;}
-.sq.light{background:rgba(238,240,216,.78);}
-.sq.dark{background:rgba(60,80,50,.55);}
+.sq{position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;background:transparent;box-shadow:inset 0 0 0 1px rgba(255,255,255,.07);}
 .sq.selected{outline:3px solid var(--gold) inset;}
 .sq.movable::after{content:'';width:22%;height:22%;border-radius:50%;background:rgba(212,175,55,.75);position:absolute;}
 .sq.capturable{outline:3px solid var(--red) inset;}
@@ -248,7 +243,7 @@ a{color:var(--gold);}
 
 /* ---------- MOBILE BOARD / GENERAL ---------- */
 @media(max-width:520px){
-  #boardWrap{width:min(96vw,480px);height:min(96vw,480px);border-width:4px;}
+  #boardWrap{width:min(96vw,480px);height:auto;border-width:4px;}
   .coord{font-size:7px;}
   .perk-pick-grid{grid-template-columns:1fr;}
   .modal{padding:18px;}
@@ -284,7 +279,7 @@ a{color:var(--gold);}
     <div class="wrap" style="max-width:480px;margin-top:8vh;">
       <div class="card">
         <h1 style="text-align:center;">WHO GOES THERE?</h1>
-        <p style="text-align:center;">Pick a name. This is how friends will find you (along with your friend code).</p>
+        <p style="text-align:center;">Pick a name. This is how friends will find you (along with your friend code). Names are unique — first come, first served — and this account is yours for good.</p>
         <input id="nameInput" placeholder="Your display name" style="width:100%;margin-top:10px;" maxlength="18">
         <div style="text-align:center;margin-top:18px;">
           <button class="btn" id="nameSubmit">ENTER THE ARENA</button>
@@ -408,7 +403,7 @@ a{color:var(--gold);}
             <p style="font-size:11px;margin:6px 0 0;">JPG/PNG, square photos look best.</p>
           </div>
         </div>
-        <label style="font-size:12px;color:var(--cream-dim);">Display name</label>
+        <label style="font-size:12px;color:var(--cream-dim);">Display name (unique — someone else may already have the one you want)</label>
         <input id="profileNameInput" style="width:100%;margin:6px 0 16px;">
 
         <label style="font-size:12px;color:var(--cream-dim);">Badges</label>
@@ -630,13 +625,38 @@ document.addEventListener('click', (e)=>{
   if(el) sfx.click();
 }, {capture:true});
 
-async function storeGet(key, shared=false){
-  try{ const r = await window.storage.get(key, shared); return r ? JSON.parse(r.value) : null; }
-  catch(e){ return null; }
+// storeGet retries a couple of times before giving up. window.storage.get()
+// throws for a key that simply doesn't exist yet *and* for real transient
+// errors, and we can't tell those apart from the error alone -- so instead
+// of treating every failure as "empty" (which risks overwriting real shared
+// data with a blank array on a hiccup), we retry first and only fall back
+// to null once we've genuinely tried a few times.
+async function storeGet(key, shared=false, attempts=3){
+  for(let i=0;i<attempts;i++){
+    try{
+      const r = await window.storage.get(key, shared);
+      return r ? JSON.parse(r.value) : null;
+    }catch(e){
+      if(i === attempts-1) return null;
+      await new Promise(res=>setTimeout(res, 120*(i+1)));
+    }
+  }
+  return null;
 }
-async function storeSet(key, value, shared=false){
-  try{ await window.storage.set(key, JSON.stringify(value), shared); return true; }
-  catch(e){ console.error('storage set failed', e); return false; }
+async function storeSet(key, value, shared=false, attempts=2){
+  for(let i=0;i<attempts;i++){
+    try{ await window.storage.set(key, JSON.stringify(value), shared); return true; }
+    catch(e){
+      console.error('storage set failed', e);
+      if(i === attempts-1) return false;
+      await new Promise(res=>setTimeout(res, 150*(i+1)));
+    }
+  }
+  return false;
+}
+async function storeDelete(key, shared=false){
+  try{ await window.storage.delete(key, shared); return true; }
+  catch(e){ return false; }
 }
 async function storeList(prefix, shared=false){
   try{ const r = await window.storage.list(prefix, shared); return r ? r.keys : []; }
@@ -657,12 +677,56 @@ const FONT_OPTIONS = [
 ];
 /* ---------- BADGES ---------- */
 const BADGES = [
+  {id:'owner', icon:'👑', name:'Owner', desc:'Runs the whole operation.'},
   {id:'first_blood', icon:'🩸', name:'First Blood', desc:'Capture your first enemy piece.'},
-  {id:'checkmate_king', icon:'👑', name:'Checkmate King', desc:'Win a game by checkmate.'},
+  {id:'checkmate_king', icon:'🏆', name:'Checkmate King', desc:'Win a game by checkmate.'},
   {id:'perk_hoarder', icon:'✨', name:'Perk Hoarder', desc:'Hold 5 active perks in one game.'},
   {id:'vacuum_virtuoso', icon:'🩷', name:'Vacuum Virtuoso', desc:'Use the Kirby vacuum ability.'},
   {id:'poster', icon:'📣', name:'Town Crier', desc:'Share your first post on the Feed.'},
 ];
+// Exactly one account may ever hold the reserved name "Monke". The shared
+// key below holds that account's friend code, so any screen can check
+// whether a given author/friend is the Owner and show the crown next to
+// their name -- without needing to read *their* private profile.
+let OWNER_CODE = null;
+async function refreshOwnerCode(){
+  OWNER_CODE = await storeGet('owner-code', true);
+  return OWNER_CODE;
+}
+function nameBadgeHtml(friendCode){
+  return (OWNER_CODE && friendCode === OWNER_CODE)
+    ? ' <span class="name-badges" title="Owner"><span>👑</span></span>'
+    : '';
+}
+const RESERVED_OWNER_NAME = 'monke';
+// Attempts to claim `name` for `myCode`. Names are unique (case-insensitive).
+// Returns {ok:true} on success, {ok:false, reason} if taken or on failure.
+// `previousName` lets a rename release the old claim once the new one lands.
+async function claimUsername(name, myCode, previousName){
+  const clean = (name||'').trim();
+  if(!clean) return {ok:false, reason:'A name is required.'};
+  if(clean.length>18) return {ok:false, reason:'Keep it to 18 characters or fewer.'};
+  const key = 'uname:'+clean.toLowerCase();
+  const existing = await storeGet(key, true);
+  if(existing && existing.code !== myCode){
+    return {ok:false, reason:`"${clean}" is already taken. Try another name.`};
+  }
+  const claimed = await storeSet(key, {code:myCode, name:clean}, true);
+  if(!claimed) return {ok:false, reason:'Could not reach the server. Try again.'};
+  if(previousName && previousName.trim().toLowerCase() !== clean.toLowerCase()){
+    await storeDelete('uname:'+previousName.trim().toLowerCase(), true);
+  }
+  if(clean.toLowerCase() === RESERVED_OWNER_NAME){
+    await storeSet('owner-code', myCode, true);
+    OWNER_CODE = myCode;
+  } else if(previousName && previousName.trim().toLowerCase() === RESERVED_OWNER_NAME){
+    // renamed away from Monke -- release the crown
+    const oc = await storeGet('owner-code', true);
+    if(oc === myCode) await storeDelete('owner-code', true);
+    OWNER_CODE = null;
+  }
+  return {ok:true};
+}
 async function awardBadge(id){
   if(!ME) return;
   ME.badges = ME.badges || [];
@@ -767,10 +831,21 @@ function setAvatarImages(){
 }
 
 async function initAfterIntro(){
-  // check for existing profile
+  // check for existing profile -- this is what makes an account permanent:
+  // 'me' lives in *personal* (non-shared) storage, so it's tied to this
+  // player and comes back automatically on every future visit.
   const saved = await storeGet('me', false);
   if(saved && saved.name){
     ME = saved;
+    ME.badges = ME.badges || [];
+    // self-heal the shared name registry in case it ever went missing,
+    // and keep the Owner crown pointed at the right account
+    await claimUsername(ME.name, ME.friendCode);
+    if(ME.name.trim().toLowerCase()===RESERVED_OWNER_NAME && !ME.badges.includes('owner')){
+      ME.badges.push('owner');
+      await storeSet('me', ME, false);
+    }
+    await refreshOwnerCode();
     await enterHome();
   } else {
     nav('nameScreen');
@@ -783,32 +858,47 @@ async function initAfterIntro(){
 $('#nameSubmit').addEventListener('click', async ()=>{
   const val = $('#nameInput').value.trim();
   if(!val){ showToast("You need a name, adventurer."); return; }
-  ME = {
-    name: val,
-    friendCode: uid(6),
-    usernameFont: 'display',
-    chatFont: 'mono',
-    friends: [],
-    avatar: null,
-    badges: []
-  };
-  await storeSet('me', ME, false);
-  // register friend code -> name mapping in shared space
-  await storeSet('friendcode:'+ME.friendCode, {name: ME.name, id: ME.friendCode}, true);
-  await enterHome();
+  const submitBtn = $('#nameSubmit');
+  submitBtn.disabled = true;
+  try{
+    const candidate = {
+      name: val,
+      friendCode: uid(6),
+      usernameFont: 'display',
+      chatFont: 'mono',
+      friends: [],
+      avatar: null,
+      badges: []
+    };
+    const claim = await claimUsername(candidate.name, candidate.friendCode);
+    if(!claim.ok){ showToast(claim.reason); return; }
+    if(candidate.name.trim().toLowerCase() === RESERVED_OWNER_NAME) candidate.badges.push('owner');
+    ME = candidate;
+    await storeSet('me', ME, false);
+    // register friend code -> name mapping in shared space (for friend-code lookups)
+    await storeSet('friendcode:'+ME.friendCode, {name: ME.name, id: ME.friendCode}, true);
+    await enterHome();
+  } finally {
+    submitBtn.disabled = false;
+  }
 });
 $('#nameInput').addEventListener('keydown', e=>{ if(e.key==='Enter') $('#nameSubmit').click(); });
 
 /* ============================================================
    HOME
    ============================================================ */
+function paintTopBarName(){
+  const html = escapeHtml(ME.name) + nameBadgeHtml(ME.friendCode);
+  ['topUserName','topUserName2','topUserName3','topUserNameFeed'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.innerHTML = html;
+  });
+}
 async function enterHome(){
   ME.badges = ME.badges || [];
   ME.avatar = ME.avatar || null;
-  $('#topUserName').textContent = ME.name;
-  $('#topUserName2').textContent = ME.name;
-  $('#topUserName3').textContent = ME.name;
-  $('#topUserNameFeed').textContent = ME.name;
+  await refreshOwnerCode();
+  paintTopBarName();
   $('#myFriendCode').textContent = ME.friendCode;
   setAvatarImages();
   nav('homeScreen');
@@ -824,7 +914,7 @@ function renderFriends(){
     return;
   }
   list.innerHTML = ME.friends.map(f=>`
-    <div class="friend-item"><span>${escapeHtml(f.name)}</span><span class="pill">${f.id}</span></div>
+    <div class="friend-item"><span>${escapeHtml(f.name)}${nameBadgeHtml(f.id)}</span><span class="pill">${f.id}</span></div>
   `).join('');
 }
 function escapeHtml(s){
@@ -853,13 +943,14 @@ async function startGlobalChatPoll(){
   globalChatTimer = setInterval(refreshGlobalChat, 3000);
 }
 async function refreshGlobalChat(){
+  await refreshOwnerCode();
   const log = await storeGet('global-chat-log', true);
   const box = $('#globalChatBox');
   if(!box) return;
   const msgs = log || [];
   const nearBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
   box.innerHTML = msgs.slice(-60).map(m=>`
-    <div class="chat-msg"><b style="font-family:${fontFamilyOf(m.font||'mono')}">${escapeHtml(m.name)}:</b> <span style="font-family:${fontFamilyOf(m.font||'mono')}">${escapeHtml(m.text)}</span></div>
+    <div class="chat-msg"><b style="font-family:${fontFamilyOf(m.font||'mono')}">${escapeHtml(m.name)}${nameBadgeHtml(m.id)}:</b> <span style="font-family:${fontFamilyOf(m.font||'mono')}">${escapeHtml(m.text)}</span></div>
   `).join('');
   if(nearBottom) box.scrollTop = box.scrollHeight;
 }
@@ -868,10 +959,12 @@ async function sendGlobalChat(){
   const text = input.value.trim();
   if(!text) return;
   input.value='';
-  const log = (await storeGet('global-chat-log', true)) || [];
-  log.push({name: ME.name, text, font: ME.chatFont, t: Date.now()});
-  while(log.length > 150) log.shift();
-  await storeSet('global-chat-log', log, true);
+  const log = await storeGet('global-chat-log', true);
+  const list = log || [];
+  list.push({name: ME.name, id: ME.friendCode, text, font: ME.chatFont, t: Date.now()});
+  while(list.length > 150) list.shift();
+  const ok = await storeSet('global-chat-log', list, true);
+  if(!ok) showToast("Message didn't send — try again.");
   await refreshGlobalChat();
 }
 $('#globalChatSend').addEventListener('click', sendGlobalChat);
@@ -915,15 +1008,29 @@ function buildProfileScreen(){
   $('#chatPreview').style.fontFamily = fontFamilyOf(ME.chatFont);
 }
 $('#saveProfileBtn').addEventListener('click', async ()=>{
+  const btn = $('#saveProfileBtn');
   const newName = $('#profileNameInput').value.trim();
-  if(newName) ME.name = newName;
-  await storeSet('me', ME, false);
-  await storeSet('friendcode:'+ME.friendCode, {name: ME.name, id: ME.friendCode}, true);
-  $('#topUserName').textContent = ME.name;
-  $('#topUserName2').textContent = ME.name;
-  $('#topUserName3').textContent = ME.name;
-  $('#topUserNameFeed').textContent = ME.name;
-  showToast("Profile saved.");
+  btn.disabled = true;
+  try{
+    if(newName && newName !== ME.name){
+      const previousName = ME.name;
+      const claim = await claimUsername(newName, ME.friendCode, previousName);
+      if(!claim.ok){ showToast(claim.reason); $('#profileNameInput').value = ME.name; return; }
+      ME.name = newName;
+      ME.badges = ME.badges || [];
+      if(newName.trim().toLowerCase()===RESERVED_OWNER_NAME && !ME.badges.includes('owner')){
+        ME.badges.push('owner');
+      }
+      await refreshOwnerCode();
+    }
+    await storeSet('me', ME, false);
+    await storeSet('friendcode:'+ME.friendCode, {name: ME.name, id: ME.friendCode}, true);
+    paintTopBarName();
+    buildProfileScreen();
+    showToast("Profile saved.");
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 function readImageAsDownscaledDataUrl(file, maxSize){
@@ -998,25 +1105,35 @@ const feedPostBtn = $('#feedPostBtn');
 if(feedPostBtn) feedPostBtn.addEventListener('click', async ()=>{
   const text = $('#feedTextInput').value.trim();
   if(!text && !feedPendingImage){ showToast('Write something or add a photo first.'); return; }
-  const posts = (await storeGet('feed-posts', true)) || [];
-  posts.push({
-    id: uid(8),
-    authorId: ME.friendCode,
-    authorName: ME.name,
-    authorAvatar: ME.avatar || null,
-    text, image: feedPendingImage,
-    t: Date.now(),
-    likes: []
-  });
-  while(posts.length > 100) posts.shift();
-  await storeSet('feed-posts', posts, true);
-  await awardBadge('poster');
-  sfx.post();
-  $('#feedTextInput').value=''; feedPendingImage=null;
-  $('#feedImagePreviewWrap').classList.add('hidden');
-  $('#feedComposer').classList.remove('active');
-  renderFeed();
-  showToast('Posted to the Feed!');
+  feedPostBtn.disabled = true;
+  try{
+    const posts = (await storeGet('feed-posts', true)) || [];
+    posts.push({
+      id: uid(8),
+      authorId: ME.friendCode,
+      authorName: ME.name,
+      authorAvatar: ME.avatar || null,
+      text, image: feedPendingImage,
+      t: Date.now(),
+      likes: []
+    });
+    while(posts.length > 100) posts.shift();
+    // shared values are capped at 5MB -- with photo posts in the mix, trim
+    // the oldest entries until we're comfortably under that so the write
+    // never silently fails once the feed gets big
+    while(posts.length > 1 && JSON.stringify(posts).length > 4200000) posts.shift();
+    const ok = await storeSet('feed-posts', posts, true);
+    if(!ok){ showToast("Couldn't post right now — please try again."); return; }
+    await awardBadge('poster');
+    sfx.post();
+    $('#feedTextInput').value=''; feedPendingImage=null;
+    $('#feedImagePreviewWrap').classList.add('hidden');
+    $('#feedComposer').classList.remove('active');
+    renderFeed();
+    showToast('Posted to the Feed!');
+  } finally {
+    feedPostBtn.disabled = false;
+  }
 });
 function timeAgo(t){
   const s = Math.max(1, Math.floor((Date.now()-t)/1000));
@@ -1028,6 +1145,7 @@ function timeAgo(t){
 async function renderFeed(){
   const list = $('#feedList');
   if(!list) return;
+  await refreshOwnerCode();
   const posts = ((await storeGet('feed-posts', true)) || []).slice().reverse();
   if(posts.length===0){
     list.innerHTML = '<div class="card" style="text-align:center;"><p>No posts yet. Be the first to share something!</p></div>';
@@ -1041,7 +1159,7 @@ async function renderFeed(){
       <img class="feed-post-avatar" src="${avatarSrc}" alt="">
       <div class="feed-post-body">
         <div class="feed-post-head">
-          <span class="feed-post-name">${escapeHtml(p.authorName)}</span>
+          <span class="feed-post-name">${escapeHtml(p.authorName)}${nameBadgeHtml(p.authorId)}</span>
           <span class="feed-post-time">· ${timeAgo(p.t)} ago</span>
         </div>
         ${p.text? `<div class="feed-post-text">${escapeHtml(p.text)}</div>` : ''}
