@@ -1669,6 +1669,31 @@ const PERKS = [
       }
       showToast('Bulletproof activated.');
     }},
+  {id:'timeskip', name:'Time Skip', icon:'⏱️', desc:'Every enemy piece is frozen until their next turn.',
+    apply: async (g,color)=>{
+      const enemy = color==='w'?'b':'w';
+      for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+        const p=g.board[r][c];
+        if(p && p.color===enemy && p.type!=='K') p.frozen = true;
+      }
+      showToast('Time Skip! The enemy is stuck in the cutaway.');
+    }},
+  {id:'royalinsurance', name:'Royal Insurance', icon:'👑', desc:'Your king and queen are shielded for one full round.',
+    apply: async (g,color)=>{
+      for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+        const p=g.board[r][c];
+        if(p && p.color===color && (p.type==='K'||p.type==='Q')) p.shield = Math.max(p.shield||0, 1);
+      }
+      showToast('The royal family is insured.');
+    }},
+  {id:'pawnstorm', name:'Pawn Storm', icon:'🌪️', desc:'Your pawns get a dramatic double-step from any starting file.',
+    apply: async (g,color)=>{
+      for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+        const p=g.board[r][c];
+        if(p && p.color===color && p.type==='P') p.doubleStep = true;
+      }
+      showToast('Pawn Storm incoming!');
+    }},
   {id:'doublestep', name:"Diva's Stride", icon:'👢', desc:'All your pawns can advance two squares from anywhere for the rest of the game.',
     apply: async (g,color)=>{
       for(let r=0;r<8;r++) for(let c=0;c<8;c++){
@@ -1981,8 +2006,15 @@ async function onSquareClick(r,c){
   }
 }
 
-async function performMove(move){
+async function performMove(move, fromRemote=false){
   const g = currentGame;
+  if(g.mode==='online-guest' && !fromRemote){
+    const action = {id:uid(10), player:ME.friendCode, move};
+    const sent = await storeSet('room-action:'+g.roomCode, action, true);
+    if(sent) showToast('Move sent to the host.');
+    else showToast('Move could not be sent. Try again.');
+    return;
+  }
   if(g.mode.startsWith('online')){
     const room = await storeGet('room:'+g.roomCode, true);
     if(!room || room.version !== g.version || room.turn !== g.turn){
@@ -2288,6 +2320,15 @@ function startGameRoomPoll(){
       if(g.mode==='online-guest' && g.turn==='b'){ /* my turn now, nothing special needed */ }
     } else if(room.chat && room.chat.length !== (g.chat||[]).length){
       g.chat = room.chat; renderGameChat();
+    }
+    if(g.mode==='online-host' && g.turn==='b'){
+      const action = await storeGet('room-action:'+g.roomCode, true);
+      const piece = action && action.move && g.board[action.move.from[0]] && g.board[action.move.from[0]][action.move.from[1]];
+      const legal = piece && piece.color==='b' && legalMovesFor(g.board, action.move.from[0], action.move.from[1]).some(m=>m.to[0]===action.move.to[0] && m.to[1]===action.move.to[1]);
+      if(action && legal){
+        await performMove(action.move, true);
+        await storeDelete('room-action:'+g.roomCode, true);
+      }
     }
   }, 1800);
 }
