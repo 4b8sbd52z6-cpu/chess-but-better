@@ -625,10 +625,20 @@ document.addEventListener('click', (e)=>{
 
 const LOCAL_STORAGE_PREFIX = 'chess-remastered-iii:';
 const SUPABASE_URL = 'https://bouluorhlwqufzohztde.supabase.co';
+const SUPABASE_REST_URL = SUPABASE_URL + '/rest/v1/chess_shared_store';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJvdWx1b3JobHdxdWZ6b2h6dGRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzMDQ4MzcsImV4cCI6MjEwNDg4MDgzN30.4msKjiDf1_c3qNIwedRrjCAI7k6aaz2K4emxdgIJ8wk';
 const supabaseClient = window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
+async function supabaseRequest(path='', options={}){
+  const response = await fetch(SUPABASE_REST_URL + path, {
+    ...options,
+    headers:{apikey:SUPABASE_ANON_KEY,Authorization:'Bearer '+SUPABASE_ANON_KEY,'Content-Type':'application/json',...(options.headers||{})}
+  });
+  if(!response.ok) throw new Error('Supabase '+response.status);
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
+}
 function localStorageKey(key, shared){
   return LOCAL_STORAGE_PREFIX + (shared ? 'shared:' : 'private:') + key;
 }
@@ -652,10 +662,12 @@ function browserStoreDelete(key, shared){
 // GitHub Pages is static and does not provide window.storage. Keep using that
 // service when present, but fall back to browser storage for local play.
 async function storeGet(key, shared=false, attempts=3){
-  if(shared && supabaseClient){
+  if(shared){
     for(let i=0;i<attempts;i++){
-      const {data,error} = await supabaseClient.from('chess_shared_store').select('value').eq('key',key).maybeSingle();
-      if(!error) return data ? data.value : null;
+      try{
+        const rows = await supabaseRequest('?select=value&key=eq.'+encodeURIComponent(key)+'&limit=1');
+        return rows && rows[0] ? rows[0].value : null;
+      }catch(e){ if(i === attempts-1) console.warn('Shared read failed', e); }
       if(i < attempts-1) await new Promise(res=>setTimeout(res, 120*(i+1)));
     }
   }
@@ -672,10 +684,12 @@ async function storeGet(key, shared=false, attempts=3){
   return browserStoreGet(key, shared);
 }
 async function storeSet(key, value, shared=false, attempts=2){
-  if(shared && supabaseClient){
+  if(shared){
     for(let i=0;i<attempts;i++){
-      const {error} = await supabaseClient.from('chess_shared_store').upsert({key,value,updated_at:new Date().toISOString()});
-      if(!error) return true;
+      try{
+        await supabaseRequest('?on_conflict=key',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({key,value,updated_at:new Date().toISOString()})});
+        return true;
+      }catch(e){ if(i === attempts-1) console.warn('Shared write failed', e); }
       if(i < attempts-1) await new Promise(res=>setTimeout(res, 150*(i+1)));
     }
   }
@@ -691,9 +705,9 @@ async function storeSet(key, value, shared=false, attempts=2){
   return browserStoreSet(key, value, shared);
 }
 async function storeDelete(key, shared=false){
-  if(shared && supabaseClient){
-    const {error} = await supabaseClient.from('chess_shared_store').delete().eq('key',key);
-    if(!error) return true;
+  if(shared){
+    try{ await supabaseRequest('?key=eq.'+encodeURIComponent(key),{method:'DELETE',headers:{Prefer:'return=minimal'}}); return true; }
+    catch(e){ console.warn('Shared delete failed', e); }
   }
   if(!window.storage || typeof window.storage.delete !== 'function') return browserStoreDelete(key, shared);
   try{ await window.storage.delete(key, shared); return true; }
@@ -819,7 +833,11 @@ function nav(screenId){
   $(`#${screenId}`).classList.add('active');
   $$('.navbtn').forEach(b=>b.classList.toggle('active', b.dataset.nav===screenId));
   if(screenId==='rulesScreen') renderRules();
-  if(screenId==='feedScreen') renderFeed();
+  if(window.feedPollTimer){ clearInterval(window.feedPollTimer); window.feedPollTimer=null; }
+  if(screenId==='feedScreen'){
+    renderFeed();
+    window.feedPollTimer = setInterval(()=>{ if($('#feedScreen').classList.contains('active')) renderFeed(); }, 5000);
+  }
   if(screenId==='profileScreen') buildProfileScreen();
   wireSoundToggle();
 }
